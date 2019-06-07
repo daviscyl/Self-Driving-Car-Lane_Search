@@ -89,15 +89,14 @@ class Lane_Finder(object):
         # Return results
         return mtx, dist
 
-    def threshold_binary(self, warped):
+    def threshold_binary(self, img):
         '''
-        Given a color-warped image, use X direction gradient and saturation
-        thresholds to select pixels that has a high probablity of being the lane
-        line and produce a binary image where these pixel locations are 1
-        everywhere else is 0.
+        Given a color image, use X direction gradient and saturation thresholds
+        to select pixels that has a high probablity of being the lane line and
+        produce a binary image where these pixel locations are 1. 
         '''
         # Convert to HLS color space and separate the V channel
-        hls = cv2.cvtColor(warped, cv2.COLOR_RGB2HLS)
+        hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
         l_channel = hls[:, :, 1]
         s_channel = hls[:, :, 2]
 
@@ -121,7 +120,7 @@ class Lane_Finder(object):
         result[(sxbinary == 1) | (s_binary == 1)] = 1
         return result
 
-    def find_lane_box(self, binary_warped):
+    def find_lane_sliding_window(self, binary_warped):
         '''
         Given a warped binary image, use boxes method to select pixels that are
         in the lane line region. Outputs these pixels' x and y locations.
@@ -208,7 +207,37 @@ class Lane_Finder(object):
         rightx = nonzerox[right_lane_inds]
         righty = nonzeroy[right_lane_inds]
 
+        # Colors in the left and right lane regions
+        out_img[lefty, leftx] = [0, 0, 255]
+        out_img[righty, rightx] = [255, 0, 0]
+
         return leftx, lefty, rightx, righty, out_img
+
+    def search_around_poly(binary_warped):
+        # HYPERPARAMETER
+        # Choose the width of the margin around the previous polynomial to search
+        # The quiz grader expects 100 here, but feel free to tune on your own!
+        margin = 100
+
+        # Grab activated pixels
+        nonzero = binary_warped.nonzero()
+        nonzeroy = np.array(nonzero[0])
+        nonzerox = np.array(nonzero[1])
+
+        ### Set the area of search based on activated x-values ###
+        ### within the +/- margin of our polynomial function ###
+        ### Hint: consider the window areas for the similarly named variables ###
+        ### in the previous quiz, but change the windows to our new search area ###
+        left_fitx_prev = left_fit[0]*(nonzeroy**2) + left_fit[1]*nonzeroy + left_fit[2]
+        left_lane_inds = ((nonzerox > (left_fitx_prev - margin)) & (nonzerox < (left_fitx_prev + margin)))
+        right_fitx_prev = right_fit[0]*(nonzeroy**2) + right_fit[1]*nonzeroy + right_fit[2]
+        right_lane_inds = ((nonzerox > (right_fitx_prev - margin)) & (nonzerox < (right_fitx_prev + margin)))
+
+        # Again, extract left and right line pixel positions
+        leftx = nonzerox[left_lane_inds]
+        lefty = nonzeroy[left_lane_inds]
+        rightx = nonzerox[right_lane_inds]
+        righty = nonzeroy[right_lane_inds]
 
     def curvature_radius(self, polyfit_params, y):
         '''
@@ -217,8 +246,19 @@ class Lane_Finder(object):
         radiuses = ((1 + (2*polyfit_params[0]*y + polyfit_params[1])**2)**1.5) / (2*polyfit_params[0])
         radius = int(np.mean(radiuses))
         radius = np.sign(radius) * max(abs(radius), self.min_radius_m)
-
         return radius
+
+    def fit_poly(self, leftx, lefty, rightx, righty, yrange):
+        ### Fit a second order polynomial to each with np.polyfit() ###
+        left_fit = np.polyfit(lefty, leftx, 2)
+        right_fit = np.polyfit(righty, rightx, 2)
+        # Generate x and y values for plotting
+        ploty = np.linspace(0, yrange-1, yrange)
+        ### Calc both polynomials using ploty, left_fit and right_fit ###
+        left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
+        right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
+
+        return left_fitx, right_fitx, ploty
 
     def pipeline(self, img):
         '''
@@ -231,49 +271,33 @@ class Lane_Finder(object):
         # Undistort
         undist = cv2.undistort(img, self.camera_mtx, self.camera_dist, None, self.camera_mtx)
 
-        # Warp
-        warped = cv2.warpPerspective(undist, self.warp_transform, self.resolution, flags=cv2.INTER_LINEAR)
-
         # Threshold Binary
-        binary_warped = self.threshold_binary(warped)
+        binary = self.threshold_binary(undist)
+
+        # Warp
+        binary_warped = cv2.warpPerspective(binary, self.warp_transform, self.resolution, flags=cv2.INTER_LINEAR)
 
         # Find Lane Pixels with Boxes or Prefit data
-        leftx, lefty, rightx, righty, box_out_img = self.find_lane_box(binary_warped)
+        leftx, lefty, rightx, righty, box_out_img = self.find_lane_sliding_window(binary_warped)
 
         # Fit Poly
-        left_fit = np.polyfit(lefty, leftx, 2)
-        right_fit = np.polyfit(righty, rightx, 2)
-        left_fit_m = np.polyfit(lefty*self.ym_per_pix, leftx*self.xm_per_pix, 2)
-        right_fit_m = np.polyfit(righty*self.ym_per_pix, rightx*self.xm_per_pix, 2)
+        left_fitx, right_fitx, ploty = self.fit_poly(leftx, lefty, rightx, righty, self.resolution[1])
 
-        # Calculate Radius & Center Deviation
-        y_m = np.linspace(0, self.resolution[1]*self.ym_per_pix, 10)
-        left_r_m = self.curvature_radius(left_fit_m, y_m)
-        right_r_m = self.curvature_radius(right_fit_m, y_m)
+        # Calculate Radius
+        midx = np.mean(np.dstack((left_fitx, right_fitx)).squeeze(), axis=1)
+        mid_lane_fit = np.polyfit(ploty*self.ym_per_pix, midx*self.xm_per_pix, 2)
+        y_eval = np.linspace(0, self.resolution[1]*self.ym_per_pix, 10)
+        radius_m = self.curvature_radius(mid_lane_fit, y_eval)
 
-        bottom_m = (self.resolution[1]-1)*self.ym_per_pix
-        center_m = (self.resolution[0]-1)/2*self.xm_per_pix
-        lane_left_m = left_fit_m[0]*bottom_m**2 + left_fit_m[1]*bottom_m + left_fit_m[2]
-        lane_right_m = right_fit_m[0]*bottom_m**2 + right_fit_m[1]*bottom_m + right_fit_m[2]
-        deviation_m = round((lane_left_m + lane_right_m)/2 - center_m, 2)
+        # Caculate Center Deviation
+        deviation_m = (np.mean(midx[-10:])-self.resolution[0]/2)*self.xm_per_pix
+        deviation_m = round(deviation_m, 2)
         deviation_dir = 'left' if deviation_m > 0 else 'right'
 
         # Curvature Radius Sanity Check
-        current_r_m = abs((left_r_m + right_r_m) // 2)
 
-        # Draw Pixels & Lane on Warped View
-        # Generate x and y values for plotting
-        ploty = np.linspace(0, self.resolution[1]-1, self.resolution[1])
-        try:
-            left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
-            right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
-        except TypeError:
-            # Avoids an error if `left` and `right_fit` are still none or incorrect
-            print('The function failed to fit a line!')
-            left_fitx = 1*ploty**2 + 1*ploty
-            right_fitx = 1*ploty**2 + 1*ploty
         # Create an image to draw the lines on
-        color_warp = np.zeros_like(warped).astype(np.uint8)
+        color_warp = np.zeros_like(img).astype(np.uint8)
         # Colors in the left and right lane regions
         color_warp[lefty, leftx] = [0, 0, 255]
         color_warp[righty, rightx] = [255, 0, 0]
@@ -282,19 +306,20 @@ class Lane_Finder(object):
         pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
         pts = np.hstack((pts_left, pts_right))
         # Draw the lane onto the warped blank image
-        cv2.fillPoly(color_warp, np.int_([pts]), (0, 255//2, 0))
+        cv2.fillPoly(color_warp, np.int_([pts]), (0, 255//3, 0))
         # Warp the blank back to original image space using inverse perspective matrix
         newwarp = cv2.warpPerspective(color_warp, self.inv_warp_transform, self.resolution)
 
         # Combine the result with the original image
-        output = cv2.addWeighted(undist, 1, newwarp, 0.6, 0)
-        cv2.putText(output, 'Curvature Radius Left = {}m, Right={}m'.format(left_r_m, right_r_m),
+        output = cv2.addWeighted(undist, 1, newwarp, 0.9, 0)
+        # Add Curvature Radius and Lane Deviation info texts to output
+        cv2.putText(output, 'Curvature Radius = {}m'.format(radius_m),
                     self.bottomLeftCornerOfText1,
                     self.font,
                     self.fontScale,
                     self.fontColor,
                     self.lineType)
-        cv2.putText(output, 'Vehicle is {}m {} of center'.format(abs(deviation_m), deviation_dir),
+        cv2.putText(output, 'Vehicle is {}m {} of lane center'.format(abs(deviation_m), deviation_dir),
                     self.bottomLeftCornerOfText2,
                     self.font,
                     self.fontScale,
