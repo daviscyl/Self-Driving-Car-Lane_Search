@@ -90,6 +90,12 @@ class Lane_Finder(object):
         return mtx, dist
 
     def threshold_binary(self, warped):
+        '''
+        Given a color-warped image, use X direction gradient and saturation
+        thresholds to select pixels that has a high probablity of being the lane
+        line and produce a binary image where these pixel locations are 1
+        everywhere else is 0.
+        '''
         # Convert to HLS color space and separate the V channel
         hls = cv2.cvtColor(warped, cv2.COLOR_RGB2HLS)
         l_channel = hls[:, :, 1]
@@ -116,6 +122,10 @@ class Lane_Finder(object):
         return result
 
     def find_lane_box(self, binary_warped):
+        '''
+        Given a warped binary image, use boxes method to select pixels that are
+        in the lane line region. Outputs these pixels' x and y locations.
+        '''
         # Take a histogram of the bottom half of the image
         histogram = np.sum(binary_warped[binary_warped.shape[0]//2:, :], axis=0)
 
@@ -211,6 +221,13 @@ class Lane_Finder(object):
         return radius
 
     def pipeline(self, img):
+        '''
+        Image processing pipeline for a single input image.
+
+        Outputs the processed image that's been undistorted and the recognized
+        lane region marked with distinct color. Curvature radius and vihicle
+        relative position to the lane center is printed on the top of the output.
+        '''
         # Undistort
         undist = cv2.undistort(img, self.camera_mtx, self.camera_dist, None, self.camera_mtx)
 
@@ -220,7 +237,7 @@ class Lane_Finder(object):
         # Threshold Binary
         binary_warped = self.threshold_binary(warped)
 
-        # Find Lane Pixels Box/Prefit
+        # Find Lane Pixels with Boxes or Prefit data
         leftx, lefty, rightx, righty, box_out_img = self.find_lane_box(binary_warped)
 
         # Fit Poly
@@ -288,13 +305,20 @@ class Lane_Finder(object):
         return output
 
     def process_video(self, video_path):
-        # Open the input video file and get fps, codec, resolution info.
+        '''
+        Wraper function for Lane_Fidner.pipeline() function.
+
+        Opens the video file, reads one frame at a time, then process the frame
+        using the image processing pipeline, and saves the processed result in
+        new video file.
+        '''
+        # Open the input video file and get fps, codec, resolution info
         cap = cv2.VideoCapture(video_path)
         fps = cap.get(cv2.CAP_PROP_FPS)
         fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
         resolution = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
 
-        # Open a VideoWriter object using above info, append 'output' to the file name.
+        # Open a VideoWriter object using above info, append 'output' to the file name
         filename, sufix = video_path.split('.')
         out_file = cv2.VideoWriter(filename+'_output.'+sufix, fourcc, fps, resolution)
 
@@ -302,10 +326,10 @@ class Lane_Finder(object):
         while(cap.isOpened()):
             ret, frame = cap.read()
             if ret == True:
-
+                # Process single frame
                 output = self.pipeline(frame)
+                # Write processed frame to output fileß
                 out_file.write(output)
-
                 # Show the imediate result and quit on Q
                 cv2.imshow('Advanced Lane-Finding Algorithm Output', output)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -345,7 +369,3 @@ class Line():
         self.allx = None
         # y values for detected line pixels
         self.ally = None
-
-
-finder = Lane_Finder()
-finder.process_video('project_video.mp4')
