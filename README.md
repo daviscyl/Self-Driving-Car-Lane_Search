@@ -20,6 +20,8 @@ The goals / steps of this project are the following:
 * Output visual display of the lane boundaries and numerical estimation of lane curvature and vehicle
   position.
 
+## Repo Directory
+
 The images for camera calibration are stored in the folder called `camera_cal`.  The images in `test_images`
 are for testing your pipeline on single frames.
 
