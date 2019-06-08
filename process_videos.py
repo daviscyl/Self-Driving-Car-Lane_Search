@@ -1,9 +1,9 @@
 from utils import Lane_Finder
 lane_finder = Lane_Finder()
 
-video_files = ['project_video.mp4',
-               'challenge_video.mp4',
-               'harder_challenge_video.mp4']
+video_files = ['videos/project_video.mp4',
+               'videos/challenge_video.mp4',
+               'videos/harder_challenge_video.mp4']
 
 print('\nFiles to be processed:\n'+'\n'.join(video_files)+'\n')
 
