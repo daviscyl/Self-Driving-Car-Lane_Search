@@ -26,7 +26,8 @@ class Lane_Finder(object):
              [960, 720],
              [960, 0]])
         self.warp_transform = cv2.getPerspectiveTransform(self.src, self.dst)
-        self.inv_warp_transform = cv2.getPerspectiveTransform(self.dst, self.src)
+        self.inv_warp_transform = cv2.getPerspectiveTransform(
+            self.dst, self.src)
 
         # Left & Right Lines Initiation
         self.left_line = Line()
@@ -40,12 +41,16 @@ class Lane_Finder(object):
         self.ym_per_pix = 30/720  # meters per pixel in y dimension
         self.xm_per_pix = 3.7/640  # meters per pixel in x dimension
 
-        # Radius Curvature calculation settings
+        # Radius curvature calculation settings
         self.min_radius_m = 840
-        self.max_radius_m = 10000
-        self.max_r_diff_m = 500
+        self.max_radius_m = 6000
 
-        # Result Text Settings
+        # Lane search settings
+        self.margin =70 # margin to search for lane pixels
+        self.nwindows = 9 # number of sliding windows
+        self.minpix = 50 # minimum number of pixels found to recenter window
+
+        # Result text settings
         self.font = cv2.FONT_HERSHEY_SIMPLEX
         self.bottomLeftCornerOfText1 = (20, 50)
         self.bottomLeftCornerOfText2 = (20, 100)
@@ -84,7 +89,8 @@ class Lane_Finder(object):
                 imgpoints.append(corners)
 
         # Use the object points and image points to calculate camera clibrations
-        _, mtx, dist, _, _ = cv2.calibrateCamera(objpoints, imgpoints, self.resolution, None, None)
+        _, mtx, dist, _, _ = cv2.calibrateCamera(
+            objpoints, imgpoints, self.resolution, None, None)
 
         # Return results
         return mtx, dist
@@ -101,7 +107,8 @@ class Lane_Finder(object):
         s_channel = hls[:, :, 2]
 
         # Sobel x
-        sobelx = cv2.Sobel(l_channel, cv2.CV_64F, 1, 0)  # Take the derivative in x
+        # Take the derivative in x
+        sobelx = cv2.Sobel(l_channel, cv2.CV_64F, 1, 0)
 
         # Absolute x derivative to accentuate lines away from horizontal
         abs_sobelx = np.absolute(sobelx)
@@ -109,11 +116,13 @@ class Lane_Finder(object):
 
         # Threshold x gradient
         sxbinary = np.zeros_like(scaled_sobel)
-        sxbinary[(scaled_sobel >= self.sx_thresh[0]) & (scaled_sobel <= self.sx_thresh[1])] = 1
+        sxbinary[(scaled_sobel >= self.sx_thresh[0]) &
+                 (scaled_sobel <= self.sx_thresh[1])] = 1
 
         # Threshold color channel
         s_binary = np.zeros_like(s_channel)
-        s_binary[(s_channel >= self.s_thresh[0]) & (s_channel <= self.s_thresh[1])] = 1
+        s_binary[(s_channel >= self.s_thresh[0]) &
+                 (s_channel <= self.s_thresh[1])] = 1
 
         # Return the result
         result = np.zeros_like(s_channel)
@@ -126,7 +135,8 @@ class Lane_Finder(object):
         in the lane line region. Outputs these pixels' x and y locations.
         '''
         # Take a histogram of the bottom half of the image
-        histogram = np.sum(binary_warped[binary_warped.shape[0]//2:, :], axis=0)
+        histogram = np.sum(
+            binary_warped[binary_warped.shape[0]//2:, :], axis=0)
 
         # Create an output image to draw on and visualize the result
         out_img = np.dstack((binary_warped, binary_warped, binary_warped))*255
@@ -137,16 +147,10 @@ class Lane_Finder(object):
         leftx_base = np.argmax(histogram[:midpoint])
         rightx_base = np.argmax(histogram[midpoint:]) + midpoint
 
-        # HYPERPARAMETERS
-        # Choose the number of sliding windows
-        nwindows = 9
-        # Set the width of the windows +/- margin
-        margin = 70
-        # Set minimum number of pixels found to recenter window
-        minpix = 50
+
 
         # Set height of windows - based on nwindows above and image shape
-        window_height = np.int(binary_warped.shape[0]//nwindows)
+        window_height = np.int(binary_warped.shape[0]//self.nwindows)
 
         # Identify the x and y positions of all nonzero pixels in the image
         nonzero = binary_warped.nonzero()
@@ -162,14 +166,14 @@ class Lane_Finder(object):
         right_lane_inds = []
 
         # Step through the windows one by one
-        for window in range(nwindows):
+        for window in range(self.nwindows):
             # Identify window boundaries in x and y (and right and left)
             win_y_low = binary_warped.shape[0] - (window+1)*window_height
             win_y_high = binary_warped.shape[0] - window*window_height
-            win_xleft_low = leftx_current - margin
-            win_xleft_high = leftx_current + margin
-            win_xright_low = rightx_current - margin
-            win_xright_high = rightx_current + margin
+            win_xleft_low = leftx_current - self.margin
+            win_xleft_high = leftx_current + self.margin
+            win_xright_low = rightx_current - self.margin
+            win_xright_high = rightx_current + self.margin
 
             # Draw the windows on the visualization image
             cv2.rectangle(out_img, (win_xleft_low, win_y_low),
@@ -188,9 +192,9 @@ class Lane_Finder(object):
             right_lane_inds.append(good_right_inds)
 
             ### If you found > minpix pixels, recenter next window ###
-            if len(good_left_inds) > minpix:
+            if len(good_left_inds) > self.minpix:
                 leftx_current = np.int(np.mean(nonzerox[good_left_inds]))
-            if len(good_right_inds) > minpix:
+            if len(good_right_inds) > self.minpix:
                 rightx_current = np.int(np.mean(nonzerox[good_right_inds]))
 
         # Concatenate the arrays of indices (previously was a list of lists of pixels)
@@ -213,39 +217,72 @@ class Lane_Finder(object):
 
         return leftx, lefty, rightx, righty, out_img
 
-    def search_around_poly(binary_warped):
-        # HYPERPARAMETER
-        # Choose the width of the margin around the previous polynomial to search
-        # The quiz grader expects 100 here, but feel free to tune on your own!
-        margin = 100
+    def find_lane_prefit(self, binary_warped, left_fit, right_fit):
 
         # Grab activated pixels
         nonzero = binary_warped.nonzero()
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
+        ploty = np.linspace(0, self.resolution[1]-1, self.resolution[1])
 
         ### Set the area of search based on activated x-values ###
         ### within the +/- margin of our polynomial function ###
-        ### Hint: consider the window areas for the similarly named variables ###
-        ### in the previous quiz, but change the windows to our new search area ###
-        left_fitx_prev = left_fit[0]*(nonzeroy**2) + left_fit[1]*nonzeroy + left_fit[2]
-        left_lane_inds = ((nonzerox > (left_fitx_prev - margin)) & (nonzerox < (left_fitx_prev + margin)))
-        right_fitx_prev = right_fit[0]*(nonzeroy**2) + right_fit[1]*nonzeroy + right_fit[2]
-        right_lane_inds = ((nonzerox > (right_fitx_prev - margin)) & (nonzerox < (right_fitx_prev + margin)))
+        left_fitx_prev = left_fit[0]*(nonzeroy**2) + \
+            left_fit[1]*nonzeroy + left_fit[2]
+        left_lane_inds = ((nonzerox > (left_fitx_prev - self.margin))
+                          & (nonzerox < (left_fitx_prev + self.margin)))
+        right_fitx_prev = right_fit[0]*(nonzeroy**2) + \
+            right_fit[1]*nonzeroy + right_fit[2]
+        right_lane_inds = ((nonzerox > (right_fitx_prev - self.margin))
+                           & (nonzerox < (right_fitx_prev + self.margin)))
 
-        # Again, extract left and right line pixel positions
+        left_fitx = left_fit[0]*(ploty**2) + left_fit[1]*ploty + left_fit[2]
+        right_fitx = right_fit[0]*(ploty**2) + \
+            right_fit[1]*ploty + right_fit[2]
+
+        # Extract left and right line pixel positions
         leftx = nonzerox[left_lane_inds]
         lefty = nonzeroy[left_lane_inds]
         rightx = nonzerox[right_lane_inds]
         righty = nonzeroy[right_lane_inds]
 
+        ## Visualization ##
+        # Create an image to draw on and an image to show the selection window
+        out_img = np.dstack((binary_warped, binary_warped, binary_warped))*255
+        window_img = np.zeros_like(out_img)
+        # Color in left and right line pixels
+        out_img[nonzeroy[left_lane_inds],
+                nonzerox[left_lane_inds]] = [255, 0, 0]
+        out_img[nonzeroy[right_lane_inds],
+                nonzerox[right_lane_inds]] = [0, 0, 255]
+
+        # Generate a polygon to illustrate the search window area
+        # And recast the x and y points into usable format for cv2.fillPoly()
+        left_line_window1 = np.array(
+            [np.transpose(np.vstack([left_fitx-self.margin, ploty]))])
+        left_line_window2 = np.array(
+            [np.flipud(np.transpose(np.vstack([left_fitx+self.margin, ploty])))])
+        left_line_pts = np.hstack((left_line_window1, left_line_window2))
+        right_line_window1 = np.array(
+            [np.transpose(np.vstack([right_fitx-self.margin, ploty]))])
+        right_line_window2 = np.array(
+            [np.flipud(np.transpose(np.vstack([right_fitx+self.margin, ploty])))])
+        right_line_pts = np.hstack((right_line_window1, right_line_window2))
+
+        # Draw the lane onto the warped blank image
+        cv2.fillPoly(window_img, np.int_([left_line_pts]), (0, 255, 0))
+        cv2.fillPoly(window_img, np.int_([right_line_pts]), (0, 255, 0))
+        result = cv2.addWeighted(out_img, 1, window_img, 0.3, 0)
+
+        return leftx, lefty, rightx, righty, result
+
     def curvature_radius(self, polyfit_params, y):
         '''
         Calculates the bending radius given a set of second order coefficients.
         '''
-        radiuses = ((1 + (2*polyfit_params[0]*y + polyfit_params[1])**2)**1.5) / (2*polyfit_params[0])
-        radius = int(np.mean(radiuses))
-        radius = np.sign(radius) * max(abs(radius), self.min_radius_m)
+        radiuses = (
+            (1 + (2*polyfit_params[0]*y + polyfit_params[1])**2)**1.5) / (2*polyfit_params[0])
+        radius = max(int(abs(np.mean(radiuses))), self.min_radius_m)
         return radius
 
     def fit_poly(self, leftx, lefty, rightx, righty, yrange):
@@ -269,28 +306,34 @@ class Lane_Finder(object):
         relative position to the lane center is printed on the top of the output.
         '''
         # Undistort
-        undist = cv2.undistort(img, self.camera_mtx, self.camera_dist, None, self.camera_mtx)
+        undist = cv2.undistort(img, self.camera_mtx,
+                               self.camera_dist, None, self.camera_mtx)
 
         # Threshold Binary
         binary = self.threshold_binary(undist)
 
         # Warp
-        binary_warped = cv2.warpPerspective(binary, self.warp_transform, self.resolution, flags=cv2.INTER_LINEAR)
+        binary_warped = cv2.warpPerspective(
+            binary, self.warp_transform, self.resolution, flags=cv2.INTER_LINEAR)
 
         # Find Lane Pixels with Boxes or Prefit data
-        leftx, lefty, rightx, righty, box_out_img = self.find_lane_sliding_window(binary_warped)
+        leftx, lefty, rightx, righty, box_out_img = self.find_lane_sliding_window(
+            binary_warped)
 
         # Fit Poly
-        left_fitx, right_fitx, ploty = self.fit_poly(leftx, lefty, rightx, righty, self.resolution[1])
+        left_fitx, right_fitx, ploty = self.fit_poly(
+            leftx, lefty, rightx, righty, self.resolution[1])
 
         # Calculate Radius
         midx = np.mean(np.dstack((left_fitx, right_fitx)).squeeze(), axis=1)
-        mid_lane_fit = np.polyfit(ploty*self.ym_per_pix, midx*self.xm_per_pix, 2)
+        mid_lane_fit = np.polyfit(
+            ploty*self.ym_per_pix, midx*self.xm_per_pix, 2)
         y_eval = np.linspace(0, self.resolution[1]*self.ym_per_pix, 10)
         radius_m = self.curvature_radius(mid_lane_fit, y_eval)
 
         # Caculate Center Deviation
-        deviation_m = (np.mean(midx[-10:])-self.resolution[0]/2)*self.xm_per_pix
+        deviation_m = (np.mean(midx[-10:]) -
+                       self.resolution[0]/2)*self.xm_per_pix
         deviation_m = round(deviation_m, 2)
         deviation_dir = 'left' if deviation_m > 0 else 'right'
 
@@ -303,17 +346,19 @@ class Lane_Finder(object):
         color_warp[righty, rightx] = [255, 0, 0]
         # Recast the x and y points into usable format for cv2.fillPoly()
         pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
-        pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
+        pts_right = np.array(
+            [np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
         pts = np.hstack((pts_left, pts_right))
         # Draw the lane onto the warped blank image
         cv2.fillPoly(color_warp, np.int_([pts]), (0, 255//3, 0))
         # Warp the blank back to original image space using inverse perspective matrix
-        newwarp = cv2.warpPerspective(color_warp, self.inv_warp_transform, self.resolution)
+        newwarp = cv2.warpPerspective(
+            color_warp, self.inv_warp_transform, self.resolution)
 
         # Combine the result with the original image
         output = cv2.addWeighted(undist, 1, newwarp, 0.9, 0)
         # Add Curvature Radius and Lane Deviation info texts to output
-        cv2.putText(output, 'Curvature Radius = {}m'.format(radius_m),
+        cv2.putText(output, 'Curvature Radius = {}m'.format(radius_m if radius_m < self.max_radius_m else 'Inf. '),
                     self.bottomLeftCornerOfText1,
                     self.font,
                     self.fontScale,
@@ -329,7 +374,7 @@ class Lane_Finder(object):
         # Return Final Result
         return output
 
-    def process_video(self, video_path):
+    def process_video(self, video_path, show=False):
         '''
         Wraper function for Lane_Fidner.pipeline() function.
 
@@ -341,11 +386,13 @@ class Lane_Finder(object):
         cap = cv2.VideoCapture(video_path)
         fps = cap.get(cv2.CAP_PROP_FPS)
         fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
-        resolution = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
+        resolution = (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
+                      int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
 
         # Open a VideoWriter object using above info, append 'output' to the file name
         filename, sufix = video_path.split('.')
-        out_file = cv2.VideoWriter(filename+'_output.'+sufix, fourcc, fps, resolution)
+        out_file = cv2.VideoWriter(
+            filename+'_output.'+sufix, fourcc, fps, resolution)
 
         # Main loop of of video frames
         while(cap.isOpened()):
@@ -353,12 +400,14 @@ class Lane_Finder(object):
             if ret == True:
                 # Process single frame
                 output = self.pipeline(frame)
-                # Write processed frame to output fileß
+                # Write processed frame to output file
                 out_file.write(output)
                 # Show the imediate result and quit on Q
-                cv2.imshow('Advanced Lane-Finding Algorithm Output', output)
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
+                if show:
+                    cv2.imshow(
+                        'Advanced Lane-Finding Algorithm Output', output)
+                    if cv2.waitKey(1) & 0xFF == ord('q'):
+                        break
             else:
                 break
 
