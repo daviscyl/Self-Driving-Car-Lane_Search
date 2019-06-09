@@ -30,7 +30,7 @@ class Lane_Finder(object):
 
         # Left & Right Lines Initiation
         self.left_line = Line()
-        self.right_lane = Line()
+        self.right_line = Line()
 
         # Pixel select params
         self.s_thresh = (170, 255)
@@ -278,6 +278,18 @@ class Lane_Finder(object):
 
         return left_fitx, right_fitx, ploty
 
+    def sanity_check(self, left_fitx, right_fitx, ploty):
+        delta_x = right_fitx - left_fitx
+        # TODO Checking that they have similar curvature
+
+        # Checking that they are roughly parallel
+        if delta_x.max() - delta_x.min() > 200:
+            return False
+        # Checking that they are separated by approximately the right distance horizontally
+        if 540 > delta_x.mean() and delta_x.mean() > 740:
+            return False
+        return True
+
     def pipeline(self, img):
         '''
         Image processing pipeline for a single input image.
@@ -302,6 +314,11 @@ class Lane_Finder(object):
         # Fit Poly
         left_fitx, right_fitx, ploty = self.fit_poly(leftx, lefty, rightx, righty, self.resolution[1])
 
+        # Sanity Check
+        if self.sanity_check(left_fitx, right_fitx, ploty):
+            self.right_line.detected = True
+            self.left_line.detected = True
+
         # Calculate Radius
         midx = np.mean(np.dstack((left_fitx, right_fitx)).squeeze(), axis=1)
         mid_lane_fit = np.polyfit(ploty*self.ym_per_pix, midx*self.xm_per_pix, 2)
@@ -312,11 +329,6 @@ class Lane_Finder(object):
         deviation_m = (np.mean(midx[-10:]) - self.resolution[0]/2)*self.xm_per_pix
         deviation_m = round(deviation_m, 2)
         deviation_dir = 'left' if deviation_m > 0 else 'right'
-
-        # Curvature Radius Sanity Check
-        # TODO Checking that they have similar curvature
-        # TODO Checking that they are separated by approximately the right distance horizontally
-        # TODO Checking that they are roughly parallel
 
         # Create an image to draw the lines on
         color_warp = np.zeros_like(img).astype(np.uint8)
