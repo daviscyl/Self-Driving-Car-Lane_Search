@@ -313,7 +313,7 @@ class Lane_Finder(object):
             radius = int((self.left_line.radius_of_curvature + self.right_line.radius_of_curvature)/2)
             deviation = round((self.right_line.line_base_pos - self.left_line.line_base_pos)/2, 2)
             # Recast the x and y points into usable format for cv2.fillPoly()
-            pts = np.hstack((self.left_line.best_pts, self.right_line.best_pts))
+            pts = np.hstack((self.left_line.best_pts, np.flipud(self.right_line.best_pts)))
             # Draw the lane onto the warped blank image
             cv2.fillPoly(output, np.int_([pts]), (0, 255//3, 0))
         else:
