@@ -29,10 +29,6 @@ class Lane_Finder(object):
         self.warp_transform = cv2.getPerspectiveTransform(self.src, self.dst)
         self.inv_warp_transform = cv2.getPerspectiveTransform(self.dst, self.src)
 
-        # Left & Right Lines Initiation
-        self.left_line = Line()
-        self.right_line = Line()
-
         # Pixel select params
         self.s_thresh = (170, 255)
         self.sx_thresh = (20, 100)
@@ -41,12 +37,16 @@ class Lane_Finder(object):
         self.ym_per_pix = 30/720  # meters per pixel in y dimension
         self.xm_per_pix = 3.7/640  # meters per pixel in x dimension
 
+        # Left & Right Lines Initiation
+        self.left_line = Line(self.resolution, self.ym_per_pix, self.xm_per_pix)
+        self.right_line = Line(self.resolution, self.ym_per_pix, self.xm_per_pix)
+
         # Radius curvature calculation settings
         self.min_radius_m = 840
         self.max_radius = 6000
 
         # Lane search settings
-        self.margin = 70  # margin to search for lane pixels
+        self.margin = 50  # margin to search for lane pixels
         self.nwindows = 9  # number of sliding windows
         self.minpix = 50  # minimum number of pixels found to recenter window
 
@@ -261,6 +261,8 @@ class Lane_Finder(object):
         return leftx, lefty, rightx, righty, result
 
     def sanity_check(self):
+        if not (self.right_line.detected and self.left_line.detected):
+            return False
         # Checking that they have similar curvature
         radius_ratio = self.right_line.radius_of_curvature / self.left_line.radius_of_curvature
         if 0.5 > radius_ratio and radius_ratio > 2:
@@ -301,28 +303,28 @@ class Lane_Finder(object):
         self.left_line.update_pixels(leftx, lefty)
         self.right_line.update_pixels(rightx, righty)
 
+        # Create an image to draw the lines on
+        output = np.zeros_like(img).astype(np.uint8)
+        # Colors in the left and right lane regions
+        output[lefty, leftx] = [0, 0, 255]
+        output[righty, rightx] = [255, 0, 0]
+
         if self.sanity_check():
             radius = int((self.left_line.radius_of_curvature + self.right_line.radius_of_curvature)/2)
-            deviation = round((self.right_line.line_base_pos - self.left_line.line_base_pos)/2, 2) 
+            deviation = round((self.right_line.line_base_pos - self.left_line.line_base_pos)/2, 2)
+            # Recast the x and y points into usable format for cv2.fillPoly()
+            pts = np.hstack((self.left_line.best_pts, self.right_line.best_pts))
+            # Draw the lane onto the warped blank image
+            cv2.fillPoly(output, np.int_([pts]), (0, 255//3, 0))
         else:
             radius = 0
             deviation = 0
-        deviation_dir = 'left' if deviation > 0 else 'right'
 
-        # Create an image to draw the lines on
-        color_warp = np.zeros_like(img).astype(np.uint8)
-        # Colors in the left and right lane regions
-        color_warp[lefty, leftx] = [0, 0, 255]
-        color_warp[righty, rightx] = [255, 0, 0]
-        # Recast the x and y points into usable format for cv2.fillPoly()
-        pts = np.hstack((self.left_line.best_pts, self.right_line.best_pts))
-        # Draw the lane onto the warped blank image
-        cv2.fillPoly(color_warp, np.int_([pts]), (0, 255//3, 0))
         # Warp the blank back to original image space using inverse perspective matrix
-        newwarp = cv2.warpPerspective(color_warp, self.inv_warp_transform, self.resolution)
-
+        output = cv2.warpPerspective(output, self.inv_warp_transform, self.resolution)
         # Combine the result with the original image
-        output = cv2.addWeighted(undist, 1, newwarp, 0.9, 0)
+        output = cv2.addWeighted(undist, 1, output, 0.9, 0)
+
         # Add Curvature Radius and Lane Deviation info texts to output
         cv2.putText(output,
                     'Curvature Radius = {}m'.format(radius if radius < self.max_radius else 'Inf. '),
@@ -332,7 +334,7 @@ class Lane_Finder(object):
                     self.fontColor,
                     self.lineType)
         cv2.putText(output,
-                    'Vehicle is {}m {} of lane center'.format(abs(deviation), 'left' if deviation>0 else 'right'),
+                    'Vehicle is {}m {} of lane center'.format(abs(deviation), 'left' if deviation > 0 else 'right'),
                     self.bottomLeftCornerOfText2,
                     self.font,
                     self.fontScale,
@@ -390,7 +392,7 @@ class Line():
     Define a class to receive the characteristics of each line detection.
     '''
 
-    def __init__(self, yrange, xm_per_pix, ym_per_pix):
+    def __init__(self, resolution, xm_per_pix, ym_per_pix):
         # was the line detected in the last iteration?
         self.detected = False
         # x values of the last n fits of the line
@@ -412,9 +414,10 @@ class Line():
         # y values for detected line pixels
         self.ally = None
         # y for fitting and evaluating radius
-        self.ploty = np.linspace(0, yrange-1, yrange)
+        self.yrange = resolution[1]
+        self.ploty = np.linspace(0, self.yrange-1, self.yrange)
         self.ploty_m = self.ploty * ym_per_pix
-        self.evaly = np.linspace(0, yrange*ym_per_pix, 10)
+        self.evaly = np.linspace(0, self.yrange*ym_per_pix, 10)
         self.xm_per_pix = xm_per_pix
         self.best_pts = None
 
@@ -424,25 +427,26 @@ class Line():
         self.ally = ally
 
         current_fit = np.polyfit(ally, allx, 2)
-        if self.current_fit:
+        if self.current_fit is not None:
             self.diffs = current_fit - self.current_fit
             if np.linalg.norm(self.diffs) < 0.1*np.linalg.norm(self.best_fit):
                 self.detected = True
-            else:
-                self.detected = False
+                xfitted = current_fit[0]*self.ploty**2 + current_fit[1]*self.ploty + current_fit[2]
+                self.recent_xfitted.append(xfitted)
+                self.bestx = sum(x for x in self.recent_xfitted)/len(self.recent_xfitted)
+                self.best_fit = np.polyfit(self.ploty, self.bestx, 2)
+                self.best_pts = np.array([np.transpose(np.vstack([self.bestx, self.ploty]))])
+
+                best_fit_m = np.polyfit(self.ploty_m, self.bestx*self.xm_per_pix, 2)
+                self.radius_of_curvature = curvature_radius(best_fit_m, self.evaly)
+
+                base_x = self.best_fit[0]*self.yrange**2 + self.best_fit[1]*self.yrange + self.best_fit[2]
+                self.line_base_pos = (base_x - 640)*self.xm_per_pix
+            #else:
+             #   self.detected = False
+        else:
+            self.best_fit = current_fit
         self.current_fit = current_fit
-
-        xfitted = self.current_fit[0]*self.ploty**2 + self.current_fit[1]*self.ploty + self.current_fit[2]
-        self.recent_xfitted.append(xfitted)
-        self.bestx = sum(x for x in self.recent_xfitted)/len(self.recent_xfitted)
-        self.best_fit = np.polyfit(self.ploty, self.bestx, 2)
-        self.best_pts = np.array([np.transpose(np.vstack([self.bestx, self.ploty]))])
-
-        best_fit_m = np.polyfit(self.ploty_m, self.bestx*self.xm_per_pix, 2)
-        self.radius_of_curvature = curvature_radius(best_fit_m, self.evaly)
-
-        base_x = self.best_fit[0]*self.yrange**2 + self.best_fit[1]*self.yrange + self.best_fit[2]
-        self.line_base_pos = (base_x - 640)*self.xm_per_pix
 
 
 def curvature_radius(polyfit_params, y):
