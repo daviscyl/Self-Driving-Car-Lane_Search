@@ -263,9 +263,9 @@ class Lane_Finder(object):
 
         # Find Lane Pixels with Boxes or Prefit data
         if self.right_line.detected and self.left_line.detected:
-            leftx, lefty, rightx, righty, out_img = self.find_lane_prefit(binary_warped)
+            leftx, lefty, rightx, righty = self.find_lane_prefit(binary_warped)
         else:
-            leftx, lefty, rightx, righty, out_img = self.find_lane_sliding_window(binary_warped)
+            leftx, lefty, rightx, righty = self.find_lane_sliding_window(binary_warped)
 
         # Update left and right lines
         self.left_line.update_pixels(leftx, lefty)
