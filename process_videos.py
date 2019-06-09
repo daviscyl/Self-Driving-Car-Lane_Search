@@ -7,7 +7,7 @@ video_files = ['videos/project_video.mp4',
 
 print('\nFiles to be processed:\n'+'\n'.join(video_files)+'\n')
 
-for video in video_files:
+for video in video_files[:1]:
     print('processing: ' + video + ' ... ', end='')
     lane_finder.process_video(video)
     print('done.')

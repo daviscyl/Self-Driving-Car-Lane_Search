@@ -30,7 +30,7 @@ class Lane_Finder(object):
         self.inv_warp_transform = cv2.getPerspectiveTransform(self.dst, self.src)
 
         # Pixel select params
-        self.s_thresh = (170, 255)
+        self.s_thresh = (130, 255)
         self.sx_thresh = (20, 100)
 
         # Define conversions in x and y from pixels space to meters
@@ -102,6 +102,7 @@ class Lane_Finder(object):
         '''
         # Convert to HLS color space and separate the V channel
         hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
+        h_channel = hls[:, :, 0]
         l_channel = hls[:, :, 1]
         s_channel = hls[:, :, 2]
 
@@ -115,11 +116,11 @@ class Lane_Finder(object):
 
         # Threshold x gradient
         sxbinary = np.zeros_like(scaled_sobel)
-        sxbinary[(scaled_sobel >= self.sx_thresh[0]) & (scaled_sobel <= self.sx_thresh[1])] = 1
+        sxbinary[(scaled_sobel >= self.sx_thresh[0]) & (scaled_sobel <= self.sx_thresh[1]) & (l_channel >= 120) & (s_channel > 10)] = 1
 
         # Threshold color channel
         s_binary = np.zeros_like(s_channel)
-        s_binary[(s_channel >= self.s_thresh[0]) & (s_channel <= self.s_thresh[1])] = 1
+        s_binary[(s_channel >= self.s_thresh[0]) & (s_channel <= self.s_thresh[1]) & (l_channel >= 50)] = 1
 
         # Return the result
         result = np.zeros_like(s_channel)
@@ -397,7 +398,7 @@ class Line():
         # was the line detected in the last iteration?
         self.detected = False
         # x values of the last n fits of the line
-        self.recent_xfitted = deque(maxlen=5)
+        self.recent_xfitted = deque(maxlen=3)
         # average x values of the fitted line over the last n iterations
         self.bestx = None
         # polynomial coefficients averaged over the last n iterations
@@ -426,28 +427,30 @@ class Line():
         '''Add update function, smooth the update from frame to frame'''
         self.allx = allx
         self.ally = ally
+        try:
+            current_fit = np.polyfit(ally, allx, 2)
+            if self.current_fit is not None:
+                self.diffs = current_fit - self.current_fit
+                if np.linalg.norm(self.diffs) < 0.1*np.linalg.norm(self.best_fit):
+                    self.detected = True
+                    xfitted = current_fit[0]*self.ploty**2 + current_fit[1]*self.ploty + current_fit[2]
+                    self.recent_xfitted.append(xfitted)
+                    self.bestx = sum(x for x in self.recent_xfitted)/len(self.recent_xfitted)
+                    self.best_fit = np.polyfit(self.ploty, self.bestx, 2)
+                    self.best_pts = np.transpose(np.vstack([self.bestx, self.ploty]))
 
-        current_fit = np.polyfit(ally, allx, 2)
-        if self.current_fit is not None:
-            self.diffs = current_fit - self.current_fit
-            if np.linalg.norm(self.diffs) < 0.1*np.linalg.norm(self.best_fit):
-                self.detected = True
-                xfitted = current_fit[0]*self.ploty**2 + current_fit[1]*self.ploty + current_fit[2]
-                self.recent_xfitted.append(xfitted)
-                self.bestx = sum(x for x in self.recent_xfitted)/len(self.recent_xfitted)
-                self.best_fit = np.polyfit(self.ploty, self.bestx, 2)
-                self.best_pts = np.transpose(np.vstack([self.bestx, self.ploty]))
+                    best_fit_m = np.polyfit(self.ploty_m, self.bestx*self.xm_per_pix, 2)
+                    self.radius_of_curvature = curvature_radius(best_fit_m, self.evaly)
 
-                best_fit_m = np.polyfit(self.ploty_m, self.bestx*self.xm_per_pix, 2)
-                self.radius_of_curvature = curvature_radius(best_fit_m, self.evaly)
-
-                base_x = self.best_fit[0]*self.yrange**2 + self.best_fit[1]*self.yrange + self.best_fit[2]
-                self.line_base_pos = (base_x - 640)*self.xm_per_pix
-            # else:
-             #   self.detected = False
-        else:
-            self.best_fit = current_fit
-        self.current_fit = current_fit
+                    base_x = self.best_fit[0]*self.yrange**2 + self.best_fit[1]*self.yrange + self.best_fit[2]
+                    self.line_base_pos = (base_x - 640)*self.xm_per_pix
+                # else:
+                #   self.detected = False
+            else:
+                self.best_fit = current_fit
+            self.current_fit = current_fit
+        except TypeError:
+            pass
 
 
 def curvature_radius(polyfit_params, y):
