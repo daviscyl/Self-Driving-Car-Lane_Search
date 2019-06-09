@@ -38,12 +38,16 @@ class Lane_Finder(object):
         self.xm_per_pix = 3.7/640  # meters per pixel in x dimension
 
         # Left & Right Lines Initiation
-        self.left_line = Line(self.resolution, self.ym_per_pix, self.xm_per_pix)
-        self.right_line = Line(self.resolution, self.ym_per_pix, self.xm_per_pix)
+        self.left_line = Line(self.resolution, self.xm_per_pix, self.ym_per_pix)
+        self.right_line = Line(self.resolution, self.xm_per_pix, self.ym_per_pix)
 
         # Radius curvature calculation settings
-        self.min_radius_m = 840
+        self.r_history = deque(maxlen=100)
+        self.min_radius = 840
         self.max_radius = 6000
+
+        # Lane Deviation Cache
+        self.d_history = deque(maxlen=50)
 
         # Lane search settings
         self.margin = 50  # margin to search for lane pixels
@@ -265,7 +269,7 @@ class Lane_Finder(object):
         if not (self.right_line.detected and self.left_line.detected):
             return False
         # Checking that they have similar curvature
-        radius_ratio = self.right_line.radius_of_curvature / self.left_line.radius_of_curvature
+        radius_ratio = self.right_line.r_curv / self.left_line.r_curv
         if 0.5 > radius_ratio and radius_ratio > 2:
             return False
         # Checking that they are roughly parallel
@@ -311,16 +315,13 @@ class Lane_Finder(object):
         output[righty, rightx] = [255, 0, 0]
 
         if self.sanity_check():
-            radius = int((self.left_line.radius_of_curvature + self.right_line.radius_of_curvature)/2)
-            deviation = round((self.right_line.line_base_pos - self.left_line.line_base_pos)/2, 2)
+            self.r_history.append((self.left_line.r_curv + self.right_line.r_curv)/2)
+            self.d_history.append((self.right_line.line_base_pos + self.left_line.line_base_pos)/2)
             # Recast the x and y points into usable format for cv2.fillPoly()
             pts = np.hstack((np.array([self.left_line.best_pts]),
                              np.array([np.flipud(self.right_line.best_pts)])))
             # Draw the lane onto the warped blank image
             cv2.fillPoly(output, np.int_([pts]), (0, 255//3, 0))
-        else:
-            radius = 0
-            deviation = 0
 
         # Warp the blank back to original image space using inverse perspective matrix
         output = cv2.warpPerspective(output, self.inv_warp_transform, self.resolution)
@@ -328,6 +329,13 @@ class Lane_Finder(object):
         output = cv2.addWeighted(undist, 1, output, 0.9, 0)
 
         # Add Curvature Radius and Lane Deviation info texts to output
+        if len(self.r_history) > 0:
+            radius = int(sum(self.r_history)/len(self.r_history))
+            deviation = round(sum(self.d_history)/len(self.d_history), 2)
+        else:
+            radius = 0
+            deviation=0
+        
         cv2.putText(output,
                     'Curvature Radius = {}m'.format(radius if radius < self.max_radius else 'Inf. '),
                     self.bottomLeftCornerOfText1,
@@ -406,7 +414,7 @@ class Line():
         # polynomial coefficients for the most recent fit
         self.current_fit = None
         # radius of curvature of the line in some units
-        self.radius_of_curvature = None
+        self.r_curv = None
         # distance in meters of vehicle center from the line
         self.line_base_pos = None
         # difference in fit coefficients between last and new fits
@@ -440,7 +448,7 @@ class Line():
                     self.best_pts = np.transpose(np.vstack([self.bestx, self.ploty]))
 
                     best_fit_m = np.polyfit(self.ploty_m, self.bestx*self.xm_per_pix, 2)
-                    self.radius_of_curvature = curvature_radius(best_fit_m, self.evaly)
+                    self.r_curv = curvature_radius(best_fit_m, self.evaly)
 
                     base_x = self.best_fit[0]*self.yrange**2 + self.best_fit[1]*self.yrange + self.best_fit[2]
                     self.line_base_pos = (base_x - 640)*self.xm_per_pix
