@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import glob
 import matplotlib.pyplot as plt
+from collections import deque
 
 
 class Lane_Finder(object):
@@ -42,7 +43,7 @@ class Lane_Finder(object):
 
         # Radius curvature calculation settings
         self.min_radius_m = 840
-        self.max_radius_m = 6000
+        self.max_radius = 6000
 
         # Lane search settings
         self.margin = 70  # margin to search for lane pixels
@@ -210,23 +211,21 @@ class Lane_Finder(object):
 
         return leftx, lefty, rightx, righty, out_img
 
-    def find_lane_prefit(self, binary_warped, left_fit, right_fit):
+    def find_lane_prefit(self, binary_warped):
 
         # Grab activated pixels
         nonzero = binary_warped.nonzero()
         nonzeroy = np.array(nonzero[0])
         nonzerox = np.array(nonzero[1])
-        ploty = np.linspace(0, self.resolution[1]-1, self.resolution[1])
 
         ### Set the area of search based on activated x-values ###
         ### within the +/- margin of our polynomial function ###
-        left_fitx_prev = left_fit[0]*(nonzeroy**2) + left_fit[1]*nonzeroy + left_fit[2]
+        l_fit = self.left_line.best_fit
+        left_fitx_prev = l_fit[0]*(nonzeroy**2) + l_fit[1]*nonzeroy + l_fit[2]
         left_lane_inds = ((nonzerox > (left_fitx_prev - self.margin)) & (nonzerox < (left_fitx_prev + self.margin)))
-        right_fitx_prev = right_fit[0]*(nonzeroy**2) + right_fit[1]*nonzeroy + right_fit[2]
+        r_fit = self.right_line.best_fit
+        right_fitx_prev = r_fit[0]*(nonzeroy**2) + r_fit[1]*nonzeroy + r_fit[2]
         right_lane_inds = ((nonzerox > (right_fitx_prev - self.margin)) & (nonzerox < (right_fitx_prev + self.margin)))
-
-        left_fitx = left_fit[0]*(ploty**2) + left_fit[1]*ploty + left_fit[2]
-        right_fitx = right_fit[0]*(ploty**2) + right_fit[1]*ploty + right_fit[2]
 
         # Extract left and right line pixel positions
         leftx = nonzerox[left_lane_inds]
@@ -235,6 +234,9 @@ class Lane_Finder(object):
         righty = nonzeroy[right_lane_inds]
 
         # Visualization ## TODO: Move this part to visualization notebook
+        ploty = np.linspace(0, self.resolution[1]-1, self.resolution[1])
+        left_fitx = l_fit[0]*(ploty**2) + l_fit[1]*ploty + l_fit[2]
+        right_fitx = r_fit[0]*(ploty**2) + r_fit[1]*ploty + r_fit[2]
         # Create an image to draw on and an image to show the selection window
         out_img = np.dstack((binary_warped, binary_warped, binary_warped))*255
         window_img = np.zeros_like(out_img)
@@ -258,31 +260,13 @@ class Lane_Finder(object):
 
         return leftx, lefty, rightx, righty, result
 
-    def curvature_radius(self, polyfit_params, y):
-        '''
-        Calculates the bending radius given a set of second order coefficients.
-        '''
-        radiuses = ((1 + (2*polyfit_params[0]*y + polyfit_params[1])**2)**1.5) / (2*polyfit_params[0])
-        radius = max(int(abs(np.mean(radiuses))), self.min_radius_m)
-        return radius
-
-    def fit_poly(self, leftx, lefty, rightx, righty, yrange):
-        ### Fit a second order polynomial to each with np.polyfit() ###
-        left_fit = np.polyfit(lefty, leftx, 2)
-        right_fit = np.polyfit(righty, rightx, 2)
-        # Generate x and y values for plotting
-        ploty = np.linspace(0, yrange-1, yrange)
-        ### Calc both polynomials using ploty, left_fit and right_fit ###
-        left_fitx = left_fit[0]*ploty**2 + left_fit[1]*ploty + left_fit[2]
-        right_fitx = right_fit[0]*ploty**2 + right_fit[1]*ploty + right_fit[2]
-
-        return left_fitx, right_fitx, ploty
-
-    def sanity_check(self, left_fitx, right_fitx, ploty):
-        delta_x = right_fitx - left_fitx
-        # TODO Checking that they have similar curvature
-
+    def sanity_check(self):
+        # Checking that they have similar curvature
+        radius_ratio = self.right_line.radius_of_curvature / self.left_line.radius_of_curvature
+        if 0.5 > radius_ratio and radius_ratio > 2:
+            return False
         # Checking that they are roughly parallel
+        delta_x = self.right_line.bestx - self.left_line.bestx
         if delta_x.max() - delta_x.min() > 200:
             return False
         # Checking that they are separated by approximately the right distance horizontally
@@ -307,28 +291,23 @@ class Lane_Finder(object):
         # Warp
         binary_warped = cv2.warpPerspective(binary, self.warp_transform, self.resolution, flags=cv2.INTER_LINEAR)
 
-        # TODO: Integrate Line() object
         # Find Lane Pixels with Boxes or Prefit data
-        leftx, lefty, rightx, righty, box_out_img = self.find_lane_sliding_window(binary_warped)
+        if self.right_line.detected and self.left_line.detected:
+            leftx, lefty, rightx, righty, out_img = self.find_lane_prefit(binary_warped)
+        else:
+            leftx, lefty, rightx, righty, out_img = self.find_lane_sliding_window(binary_warped)
 
-        # Fit Poly
-        left_fitx, right_fitx, ploty = self.fit_poly(leftx, lefty, rightx, righty, self.resolution[1])
+        # Update left and right lines
+        self.left_line.update_pixels(leftx, lefty)
+        self.right_line.update_pixels(rightx, righty)
 
-        # Sanity Check
-        if self.sanity_check(left_fitx, right_fitx, ploty):
-            self.right_line.detected = True
-            self.left_line.detected = True
-
-        # Calculate Radius
-        midx = np.mean(np.dstack((left_fitx, right_fitx)).squeeze(), axis=1)
-        mid_lane_fit = np.polyfit(ploty*self.ym_per_pix, midx*self.xm_per_pix, 2)
-        y_eval = np.linspace(0, self.resolution[1]*self.ym_per_pix, 10)
-        radius_m = self.curvature_radius(mid_lane_fit, y_eval)
-
-        # Caculate Center Deviation
-        deviation_m = (np.mean(midx[-10:]) - self.resolution[0]/2)*self.xm_per_pix
-        deviation_m = round(deviation_m, 2)
-        deviation_dir = 'left' if deviation_m > 0 else 'right'
+        if self.sanity_check():
+            radius = int((self.left_line.radius_of_curvature + self.right_line.radius_of_curvature)/2)
+            deviation = round((self.right_line.line_base_pos - self.left_line.line_base_pos)/2, 2) 
+        else:
+            radius = 0
+            deviation = 0
+        deviation_dir = 'left' if deviation > 0 else 'right'
 
         # Create an image to draw the lines on
         color_warp = np.zeros_like(img).astype(np.uint8)
@@ -336,25 +315,24 @@ class Lane_Finder(object):
         color_warp[lefty, leftx] = [0, 0, 255]
         color_warp[righty, rightx] = [255, 0, 0]
         # Recast the x and y points into usable format for cv2.fillPoly()
-        pts_left = np.array([np.transpose(np.vstack([left_fitx, ploty]))])
-        pts_right = np.array([np.flipud(np.transpose(np.vstack([right_fitx, ploty])))])
-        pts = np.hstack((pts_left, pts_right))
+        pts = np.hstack((self.left_line.best_pts, self.right_line.best_pts))
         # Draw the lane onto the warped blank image
         cv2.fillPoly(color_warp, np.int_([pts]), (0, 255//3, 0))
         # Warp the blank back to original image space using inverse perspective matrix
-        newwarp = cv2.warpPerspective(
-            color_warp, self.inv_warp_transform, self.resolution)
+        newwarp = cv2.warpPerspective(color_warp, self.inv_warp_transform, self.resolution)
 
         # Combine the result with the original image
         output = cv2.addWeighted(undist, 1, newwarp, 0.9, 0)
         # Add Curvature Radius and Lane Deviation info texts to output
-        cv2.putText(output, 'Curvature Radius = {}m'.format(radius_m if radius_m < self.max_radius_m else 'Inf. '),
+        cv2.putText(output,
+                    'Curvature Radius = {}m'.format(radius if radius < self.max_radius else 'Inf. '),
                     self.bottomLeftCornerOfText1,
                     self.font,
                     self.fontScale,
                     self.fontColor,
                     self.lineType)
-        cv2.putText(output, 'Vehicle is {}m {} of lane center'.format(abs(deviation_m), deviation_dir),
+        cv2.putText(output,
+                    'Vehicle is {}m {} of lane center'.format(abs(deviation), 'left' if deviation>0 else 'right'),
                     self.bottomLeftCornerOfText2,
                     self.font,
                     self.fontScale,
@@ -412,17 +390,17 @@ class Line():
     Define a class to receive the characteristics of each line detection.
     '''
 
-    def __init__(self):
+    def __init__(self, yrange, xm_per_pix, ym_per_pix):
         # was the line detected in the last iteration?
         self.detected = False
         # x values of the last n fits of the line
-        self.recent_xfitted = []
+        self.recent_xfitted = deque(maxlen=5)
         # average x values of the fitted line over the last n iterations
         self.bestx = None
         # polynomial coefficients averaged over the last n iterations
         self.best_fit = None
         # polynomial coefficients for the most recent fit
-        self.current_fit = [np.array([False])]
+        self.current_fit = None
         # radius of curvature of the line in some units
         self.radius_of_curvature = None
         # distance in meters of vehicle center from the line
@@ -433,5 +411,41 @@ class Line():
         self.allx = None
         # y values for detected line pixels
         self.ally = None
+        # y for fitting and evaluating radius
+        self.ploty = np.linspace(0, yrange-1, yrange)
+        self.ploty_m = self.ploty * ym_per_pix
+        self.evaly = np.linspace(0, yrange*ym_per_pix, 10)
+        self.xm_per_pix = xm_per_pix
+        self.best_pts = None
 
-    # TODO: Add update function, smooth the update from frame to frame
+    def update_pixels(self, allx, ally):
+        '''Add update function, smooth the update from frame to frame'''
+        self.allx = allx
+        self.ally = ally
+
+        current_fit = np.polyfit(ally, allx, 2)
+        if self.current_fit:
+            self.diffs = current_fit - self.current_fit
+            if np.linalg.norm(self.diffs) < 0.1*np.linalg.norm(self.best_fit):
+                self.detected = True
+            else:
+                self.detected = False
+        self.current_fit = current_fit
+
+        xfitted = self.current_fit[0]*self.ploty**2 + self.current_fit[1]*self.ploty + self.current_fit[2]
+        self.recent_xfitted.append(xfitted)
+        self.bestx = sum(x for x in self.recent_xfitted)/len(self.recent_xfitted)
+        self.best_fit = np.polyfit(self.ploty, self.bestx, 2)
+        self.best_pts = np.array([np.transpose(np.vstack([self.bestx, self.ploty]))])
+
+        best_fit_m = np.polyfit(self.ploty_m, self.bestx*self.xm_per_pix, 2)
+        self.radius_of_curvature = curvature_radius(best_fit_m, self.evaly)
+
+        base_x = self.best_fit[0]*self.yrange**2 + self.best_fit[1]*self.yrange + self.best_fit[2]
+        self.line_base_pos = (base_x - 640)*self.xm_per_pix
+
+
+def curvature_radius(polyfit_params, y):
+    '''Calculates the bending radius given a set of second order coefficients.'''
+    radiuses = ((1 + (2*polyfit_params[0]*y + polyfit_params[1])**2)**1.5) / (2*polyfit_params[0])
+    return int(abs(np.mean(radiuses)))
