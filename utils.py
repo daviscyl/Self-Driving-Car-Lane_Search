@@ -1,8 +1,9 @@
-import numpy as np
-import cv2
 import glob
-import matplotlib.pyplot as plt
 from collections import deque
+
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
 
 
 class Lane_Finder(object):
@@ -120,7 +121,8 @@ class Lane_Finder(object):
 
         # Threshold x gradient
         sxbinary = np.zeros_like(scaled_sobel)
-        sxbinary[(scaled_sobel >= self.sx_thresh[0]) & (scaled_sobel <= self.sx_thresh[1]) & (l_channel >= 120) & (s_channel > 10)] = 1
+        sxbinary[(scaled_sobel >= self.sx_thresh[0]) & (scaled_sobel <= self.sx_thresh[1])
+                 & (l_channel >= 120) & (s_channel > 10)] = 1
 
         # Threshold color channel
         s_binary = np.zeros_like(s_channel)
@@ -297,8 +299,8 @@ class Lane_Finder(object):
             deviation = round(sum(self.d_history)/len(self.d_history), 2)
         else:
             radius = 0
-            deviation=0
-        
+            deviation = 0
+
         cv2.putText(output,
                     'Curvature Radius = {}m'.format(radius if radius < self.max_radius else 'Inf. '),
                     self.bottomLeftCornerOfText1,
