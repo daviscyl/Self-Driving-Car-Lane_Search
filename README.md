@@ -94,22 +94,24 @@ have been visualized below:
 ![alt text][window]
 ![alt text][prefit]
 
-#### 5. Describe how (and identify where in your code) you calculated the radius of curvature of the lane and the position of the vehicle with respect to center.
+#### 5. Calculated the Radius of Curvature, and Lane Center Deviation
 
-I did this in lines # through # in my code in `my_other_file.py`
+I used the function `curvature_radius()` to calculate the line radius of curvature in lines 428 through 431 in my code in `utils.py` and this function is called whenever `Lane_Finder.pipeline()` updates the pixels of right and left line pixels via `Line.update_pixels()`, and calls `curvature_radius()` in line 415 in `Line.update_pixels()`. The final curvature of radius is calculated in line 297 in `utils.py` inside the `Lane_Finder.piepline()` by taking the average of the right line and the left line curvature radius over the last 3 frames. The curvature of raius value tend to go wild when the vehicle is traveling generally straight lines in the video, and to handle this I did a final check before putting this info to the final output image in line 304 of `utils.py` by comparing the calculated value with the `Lane_Finder`'s defined maximum value `Lane_Finder.max_radius` which is defined in line 48 of `utils.py` to be 6000 meters, and if the caculated radius exeeds the max value allowed, the pipeline would simply project `Inf.` to the image to denote the situation where the vehicle is traveling straight line.
 
-#### 6. Provide an example image of your result plotted back down onto the road such that the lane area is identified clearly.
+The `Line.line_base_pos` is a propety in `Line` object, and is updated whenever `Line.update_pixels()` is called, and this happens at line 417 in `utils.py`. The final diviation is calcuated by taking the average of right and left line deviation over the past 25 frames.
 
-I implemented this step in lines # through # in my code in `yet_another_file.py` in the function `map_lane()`.  Here is an example of my result on a test image:
+The calcualted curvature radius and lane center deviation info is then projected to the pipeline output image in line 303 through 316 in `utils.py`
+
+### Pipeline Output
+
+The whole pipeline is implemented in `Lane_Finder.pipeline()` in lines 248 through 319 in `utils.py`.  Here are a couple of examples of my pipeline result on different test images:
 
 ![alt text][pipeline]
 ![alt text][pipelines]
 
 ---
 
-### Pipeline (video)
-
-#### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (wobbly lines are ok but no catastrophic failures that would cause the car to drive off the road!).
+## Pipeline (video)
 
 Here's a [link to my video result](./project_video_output.mp4)
 
