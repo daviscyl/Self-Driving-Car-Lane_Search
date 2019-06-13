@@ -1,4 +1,4 @@
-# Advanced Lane Finding Project
+# Self-Driving Car: Advanced Lane Detection Project
 
 The goals / steps of this project are the following:
 
@@ -96,7 +96,9 @@ have been visualized below:
 
 #### 5. Calculated the Radius of Curvature, and Lane Center Deviation
 
-I used the function `curvature_radius()` to calculate the line radius of curvature in lines 428 through 431 in my code in `utils.py` and this function is called whenever `Lane_Finder.pipeline()` updates the pixels of right and left line pixels via `Line.update_pixels()`, and calls `curvature_radius()` in line 415 in `Line.update_pixels()`. The final curvature of radius is calculated in line 297 in `utils.py` inside the `Lane_Finder.piepline()` by taking the average of the right line and the left line curvature radius over the last 3 frames. The curvature of raius value tend to go wild when the vehicle is traveling generally straight lines in the video, and to handle this I did a final check before putting this info to the final output image in line 304 of `utils.py` by comparing the calculated value with the `Lane_Finder`'s defined maximum value `Lane_Finder.max_radius` which is defined in line 48 of `utils.py` to be 6000 meters, and if the caculated radius exeeds the max value allowed, the pipeline would simply project `Inf.` to the image to denote the situation where the vehicle is traveling straight line.
+I used the function `curvature_radius()` to calculate the line radius of curvature in lines 428 through 431 in `utils.py` and this function is called whenever `Lane_Finder.pipeline()` updates the pixels of right and left line pixels via `Line.update_pixels()`, and calls `curvature_radius()` in line 415 in `Line.update_pixels()`. The final curvature of radius is calculated in line 297 in `utils.py` inside the `Lane_Finder.piepline()` by taking the average of the right line and the left line curvature radius over the last 3 frames.
+
+The curvature of raius value tend to go wild when the vehicle is traveling generally straight lines in the video, and to handle this I did a final check before putting this info to the final output image in line 304 of `utils.py` by comparing the calculated value with the `Lane_Finder`'s defined maximum value `Lane_Finder.max_radius` which is defined in `Lane_Finder.__init__()` to be 6000 meters, and if the caculated radius exeeds the max value allowed, the pipeline would simply project `Inf.` to the image to denote the situation where the vehicle is traveling straight line.
 
 The `Line.line_base_pos` is a propety in `Line` object, and is updated whenever `Line.update_pixels()` is called, and this happens at line 417 in `utils.py`. The final diviation is calcuated by taking the average of right and left line deviation over the past 25 frames.
 
@@ -113,12 +115,20 @@ The whole pipeline is implemented in `Lane_Finder.pipeline()` in lines 248 throu
 
 ## Pipeline (video)
 
-Here's a [link to my video result](./project_video_output.mp4)
+I have used above mentioned algorithms and processed a 50 second video taking from the roads of Highway 280 in the Bay Area. The wrapper codes I used to read the video frame by frame and process each frame using `Lane_Finder.pipeline()`, and then write the frames in the output video file is included in `Lane_Finder.process_video()` which is is lines 321 through 361 in `utils.py`.
+
+Here's a [link to my video result](https://youtu.be/Xsx4ypev_JI).
 
 ---
 
-### Discussion
+## Discussion
 
-#### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
+### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
+Having built the whole video processing pipeline, I think the most important core feature is the `threshold_binary()` function which produces pixels locations for later stage to use. I have tried to manually manipulate threshold values in the `threshold_binary()` fundtion to produce the correct binary image that captures the lanes as much as possible but everything else as little as possible.
+
+However this has been very difficult. Many objects in the road, especially road side plants and vertical lines in the high way, have similar color features as the lane lines, and are extremely hard to filter out although a human can easily dicern which parts are lane lines and which parts are not.
+
+In fact I have tried to produce the video results from `videos/challenge_video.mp4` and `videos/harder_challenge_video.mp4` but those results came out with much inferior performance than the one I've linked above.
+
+I believe to further improve the reliability of the lane detection algorithm, a neural lane pixel detection algorithm is needed, such as [Sementic Segmentation](https://arxiv.org/abs/1605.06211).
