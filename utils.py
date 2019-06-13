@@ -107,7 +107,6 @@ class Lane_Finder(object):
         '''
         # Convert to HLS color space and separate the V channel
         hls = cv2.cvtColor(img, cv2.COLOR_RGB2HLS)
-        h_channel = hls[:, :, 0]
         l_channel = hls[:, :, 1]
         s_channel = hls[:, :, 2]
 
@@ -235,7 +234,7 @@ class Lane_Finder(object):
             return False
         # Checking that they have similar curvature
         radius_ratio = self.right_line.r_curv / self.left_line.r_curv
-        if 0.5 > radius_ratio and radius_ratio > 2:
+        if 0.5 > radius_ratio or radius_ratio > 2:
             return False
         # Checking that they are roughly parallel
         delta_x = self.right_line.bestx - self.left_line.bestx
