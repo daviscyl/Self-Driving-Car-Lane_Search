@@ -1,5 +1,7 @@
 # Self-Driving Car: Advanced Lane Detection Project
 
+In this project I build an image processing pipeline to process a piece of video taken from a car-mounted camera facing the front while driving on Highway 280 in the Bay Area, and detect where in the image the current car lane's right and left lines are. The pipeline also caculates the curvature of radius of current lane as well as the vehicle's deviation from the lane center. Those outputs can then be used to control a self-driving car to stably keep itself in the center of the current lane.
+
 The goals / steps of this project are the following:
 
 * Compute the camera calibration matrix and distortion coefficients given a set of chessboard images.
