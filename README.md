@@ -125,8 +125,6 @@ Here's a [link to my video result](https://youtu.be/Xsx4ypev_JI).
 
 ## Discussion
 
-### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
-
 Having built the whole video processing pipeline, I think the most important core feature is the `threshold_binary()` function which produces pixels locations for later stage to use. I have tried to manually manipulate threshold values in the `threshold_binary()` fundtion to produce the correct binary image that captures the lanes as much as possible but everything else as little as possible.
 
 However this has been very difficult. Many objects in the road, especially road side plants and vertical lines in the high way, have similar color features as the lane lines, and are extremely hard to filter out although a human can easily dicern which parts are lane lines and which parts are not.
