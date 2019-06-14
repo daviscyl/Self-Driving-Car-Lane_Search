@@ -129,6 +129,6 @@ Having built the whole video processing pipeline, I think the most important cor
 
 However this has been very difficult. Many objects in the road, especially road side plants and vertical lines in the high way, have similar color features as the lane lines, and are extremely hard to filter out although a human can easily dicern which parts are lane lines and which parts are not.
 
-In fact I have tried to produce the video results from `videos/challenge_video.mp4` and `videos/harder_challenge_video.mp4` but those results came out with much inferior performance than the one I've linked above.
+In fact I have tried to produce the video results from `videos/challenge_video.mp4` and `videos/harder_challenge_video.mp4` but those results came out with much inferior performance than the simple video one I've linked above which has only moderate lane curvature and no cars crossing the lanes.
 
-I believe to further improve the reliability of the lane detection algorithm, a neural lane pixel detection algorithm is needed, such as [Sementic Segmentation](https://arxiv.org/abs/1605.06211).
+I believe to further improve the reliability of the lane detection algorithm, a neural lane pixel detection algorithm is needed, such as [Sementic Segmentation](https://arxiv.org/abs/1605.06211) for lane pixels.
