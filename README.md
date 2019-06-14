@@ -42,7 +42,7 @@ As we can see that the distorted image has been mostly restored to the undistort
 
 ## Pipeline (Single Images)
 
-### 1. Undistort
+### 1. Distortion Correction
 
 In my single image processing pipeline: `Lane_Finder.pipeline()`, the undistotion step is performed as a first step before any other processing is applied (line 258 of `utils.py`). I used the `camera_mtx` and `camera_dist` transformation matrixes obtained from the **Camera Calibration** step, and used `cv2.undistort` to obtain the undistortion effect as shown bellow:
 
